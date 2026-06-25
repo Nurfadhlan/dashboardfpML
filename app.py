@@ -158,15 +158,15 @@ st.markdown("""
     .badge-xgb  { background: rgba(245,101,101,0.2); color: #f56565; border: 1px solid #f56565; }
     .badge-best { background: rgba(251,191,36,0.2);  color: #fbbf24; border: 1px solid #fbbf24; }
 
-    /* Prediction result box */
-    .pred-Pelanggan Potensial {
+    /* Prediction result box — menggunakan nama class dengan tanda hubung */
+    .pred-pelanggan-potensial {
         background: linear-gradient(135deg, rgba(34,197,94,0.15), rgba(34,197,94,0.05));
         border: 1.5px solid #22c55e;
         border-radius: 16px;
         padding: 24px;
         text-align: center;
     }
-    .pred-not-Pelanggan Potensial {
+    .pred-pelanggan-kurang-potensial {
         background: linear-gradient(135deg, rgba(245,101,101,0.15), rgba(245,101,101,0.05));
         border: 1.5px solid #f56565;
         border-radius: 16px;
@@ -224,7 +224,13 @@ def load_and_preprocess(filepath: str):
       - Pelanggan berumur 25-45, pembelian ≥ $60, musim Fall/Winter → cenderung berlangganan
     Ini menciptakan distribusi target yang realistis (~40% Pelanggan Potensial).
     """
-    df = pd.read_csv(filepath)
+    # Cek keberadaan file
+    try:
+        df = pd.read_csv(filepath)
+    except FileNotFoundError:
+        st.error(f"❌ File '{filepath}' tidak ditemukan. Pastikan file CSV berada di direktori yang sama dengan app.py.")
+        st.stop()
+
     df_original = df.copy()
 
     # ── Buat kolom target sintetis ──────────────────────────────────────────
@@ -325,10 +331,10 @@ def train_models(_X_train_sc, _X_test_sc, _X_train, _X_test, _y_train, _y_test):
     }
 
     # ── XGBoost ──────────────────────────────────────────────────────────────
+    # Parameter use_label_encoder dan eval_metric dihapus untuk kompatibilitas xgboost>=2.0.0
     xgb = XGBClassifier(
         n_estimators=200, max_depth=5, learning_rate=0.08,
         subsample=0.8, colsample_bytree=0.8,
-        use_label_encoder=False, eval_metric='logloss',
         random_state=42, n_jobs=-1, verbosity=0
     )
     xgb.fit(_X_train, _y_train)
@@ -452,7 +458,7 @@ if page == "🏠 Overview":
         (c1, "Total Records",     f"{len(df):,}",                 "3.900 baris data transaksi"),
         (c2, "Fitur Digunakan",   "9",                             "Age, Category, Season, dll"),
         (c3, "Pelanggan Potensial",        f"{df['Pelanggan Potensial'].sum():,}",   f"{sub_pct:.1f}% dari total"),
-        (c4, "Train / Test SPelanggan Potensial$0plit","80% / 20%",                    f"{len(X_train)} / {len(X_test)} samples"),
+        (c4, "Train / Test Split","80% / 20%",                    f"{len(X_train)} / {len(X_test)} samples"),
         (c5, "Model Terbaik",     best_model_name.split()[0],      f"F1: {best_model_info['f1']:.3f}"),
     ]
     for col, label, val, sub in kpis:
@@ -971,8 +977,9 @@ elif page == "🔮 Prediksi Interaktif":
 
         with c_main:
             if pred == 1:
+                # Menggunakan class pred-pelanggan-potensial
                 st.markdown(f"""
-                <div class='pred-Pelanggan Potensial'>
+                <div class='pred-pelanggan-potensial'>
                     <div class='pred-emoji'>✅</div>
                     <div class='pred-label'>BERLANGGANAN</div>
                     <div class='pred-conf'>Keyakinan model: <b style='color:#22c55e;'>{conf_Pelanggan_Potensial:.1%}</b></div>
@@ -981,7 +988,7 @@ elif page == "🔮 Prediksi Interaktif":
                 """, unsafe_allow_html=True)
             else:
                 st.markdown(f"""
-                <div class='pred-not-Pelanggan Potensial'>
+                <div class='pred-pelanggan-kurang-potensial'>
                     <div class='pred-emoji'>❌</div>
                     <div class='pred-label'>TIDAK BERLANGGANAN</div>
                     <div class='pred-conf'>Keyakinan model: <b style='color:#f56565;'>{conf_not:.1%}</b></div>
