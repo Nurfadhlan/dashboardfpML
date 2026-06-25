@@ -1,0 +1,904 @@
+# =============================================================================
+# DASHBOARD: Perbandingan Model ML untuk Prediksi Status Berlangganan Pelanggan
+# Metode: Logistic Regression | Random Forest | XGBoost
+# =============================================================================
+
+# ─────────────────────────────────────────────
+# 1. IMPORT LIBRARY
+# ─────────────────────────────────────────────
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score,
+    f1_score, confusion_matrix, classification_report, roc_curve, auc
+)
+from xgboost import XGBClassifier
+import warnings
+warnings.filterwarnings("ignore")
+
+# ─────────────────────────────────────────────
+# 2. KONFIGURASI HALAMAN
+# ─────────────────────────────────────────────
+st.set_page_config(
+    page_title="ML Subscription Predictor",
+    page_icon="🛒",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# ─────────────────────────────────────────────
+# 3. CUSTOM CSS — Desain Elegan & Profesional
+# ─────────────────────────────────────────────
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
+    .main {
+        background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+        min-height: 100vh;
+    }
+
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+        border-right: 1px solid rgba(255,255,255,0.05);
+    }
+    [data-testid="stSidebar"] * {
+        color: #e0e0e0 !important;
+    }
+
+    .kpi-card {
+        background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 16px;
+        padding: 20px 24px;
+        text-align: center;
+        backdrop-filter: blur(10px);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        margin-bottom: 10px;
+    }
+    .kpi-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 32px rgba(102,126,234,0.3);
+    }
+    .kpi-label {
+        font-size: 0.75rem;
+        color: #aab4be;
+        text-transform: uppercase;
+        letter-spacing: 1.2px;
+        font-weight: 600;
+        margin-bottom: 8px;
+    }
+    .kpi-value {
+        font-size: 2rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    .kpi-sub {
+        font-size: 0.72rem;
+        color: #6c757d;
+        margin-top: 4px;
+    }
+
+    .section-title {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: #e0e0e0;
+        margin-bottom: 4px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid rgba(102,126,234,0.4);
+    }
+    .section-sub {
+        font-size: 0.85rem;
+        color: #8892a4;
+        margin-bottom: 20px;
+    }
+
+    .hero-banner {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 20px;
+        padding: 32px 40px;
+        margin-bottom: 28px;
+        position: relative;
+        overflow: hidden;
+    }
+    .hero-banner::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 300px;
+        height: 300px;
+        background: rgba(255,255,255,0.06);
+        border-radius: 50%;
+    }
+    .hero-title {
+        font-size: 1.9rem;
+        font-weight: 700;
+        color: white;
+        margin-bottom: 6px;
+    }
+    .hero-sub {
+        font-size: 0.95rem;
+        color: rgba(255,255,255,0.8);
+    }
+
+    .model-badge {
+        display: inline-block;
+        padding: 4px 14px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin: 4px;
+    }
+    .badge-lr   { background: rgba(102,126,234,0.2); color: #667eea; border: 1px solid #667eea; }
+    .badge-rf   { background: rgba(34,197,94,0.2);   color: #22c55e; border: 1px solid #22c55e; }
+    .badge-xgb  { background: rgba(245,101,101,0.2); color: #f56565; border: 1px solid #f56565; }
+    .badge-best { background: rgba(251,191,36,0.2);  color: #fbbf24; border: 1px solid #fbbf24; }
+
+    /* FIX: CSS class tidak boleh ada spasi — diganti dengan nama valid */
+    .pred-subscribe {
+        background: linear-gradient(135deg, rgba(34,197,94,0.15), rgba(34,197,94,0.05));
+        border: 1.5px solid #22c55e;
+        border-radius: 16px;
+        padding: 24px;
+        text-align: center;
+    }
+    .pred-not-subscribe {
+        background: linear-gradient(135deg, rgba(245,101,101,0.15), rgba(245,101,101,0.05));
+        border: 1.5px solid #f56565;
+        border-radius: 16px;
+        padding: 24px;
+        text-align: center;
+    }
+    .pred-emoji  { font-size: 3rem; margin-bottom: 8px; }
+    .pred-label  { font-size: 1.4rem; font-weight: 700; color: #e0e0e0; }
+    .pred-conf   { font-size: 0.85rem; color: #8892a4; margin-top: 6px; }
+
+    .stMetric label { color: #aab4be !important; }
+    .stMetric .metric-container { background: transparent; }
+    div[data-testid="metric-container"] {
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 12px 18px;
+    }
+
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: rgba(255,255,255,0.03);
+        border-radius: 12px;
+        padding: 4px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        border-radius: 8px;
+        color: #aab4be;
+        padding: 8px 20px;
+        font-weight: 500;
+    }
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(135deg, #667eea, #764ba2) !important;
+        color: white !important;
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1a1a2e; }
+    ::-webkit-scrollbar-thumb { background: #667eea; border-radius: 3px; }
+</style>
+""", unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+# 4. LOAD & PREPROCESSING DATA
+# ─────────────────────────────────────────────
+@st.cache_data
+def load_and_preprocess(filepath: str):
+    df = pd.read_csv(filepath)
+
+    np.random.seed(42)
+    age_score      = np.where((df['Age'] >= 25) & (df['Age'] <= 45), 0.35, 0.10)
+    purchase_score = np.where(df['Purchase Amount (USD)'] >= 60, 0.30,
+                     np.where(df['Purchase Amount (USD)'] >= 40, 0.20, 0.08))
+    season_score   = np.where(df['Season'].isin(['Fall', 'Winter']), 0.20, 0.10)
+    cat_score      = np.where(df['Category'].isin(['Accessories', 'Outerwear']), 0.15, 0.05)
+
+    proba_subscribe = age_score + purchase_score + season_score + cat_score
+    proba_subscribe = np.clip(proba_subscribe, 0, 1)
+    noise = np.random.normal(0, 0.05, len(df))
+    proba_subscribe = np.clip(proba_subscribe + noise, 0, 1)
+
+    df['Pelanggan Potensial'] = (proba_subscribe > 0.50).astype(int)
+
+    cat_cols = ['Gender', 'Item Purchased', 'Category', 'Location', 'Size', 'Color', 'Season']
+    encoders = {}
+    df_encoded = df.copy()
+    for col in cat_cols:
+        le = LabelEncoder()
+        df_encoded[col + '_enc'] = le.fit_transform(df[col])
+        encoders[col] = le
+
+    feature_cols = ['Age', 'Purchase Amount (USD)'] + [c + '_enc' for c in cat_cols]
+    X = df_encoded[feature_cols]
+    y = df_encoded['Pelanggan Potensial']
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+
+    scaler = StandardScaler()
+    X_train_sc = scaler.fit_transform(X_train)
+    X_test_sc  = scaler.transform(X_test)
+
+    return df, df_encoded, X_train, X_test, X_train_sc, X_test_sc, y_train, y_test, encoders, scaler, feature_cols
+
+
+# ─────────────────────────────────────────────
+# 5. TRAINING MODEL
+# ─────────────────────────────────────────────
+@st.cache_resource
+def train_models(_X_train_sc, _X_test_sc, _X_train, _X_test, _y_train, _y_test):
+    results = {}
+
+    lr = LogisticRegression(max_iter=1000, random_state=42, C=0.5)
+    lr.fit(_X_train_sc, _y_train)
+    y_pred_lr = lr.predict(_X_test_sc)
+    y_prob_lr = lr.predict_proba(_X_test_sc)[:, 1]
+    results['Logistic Regression'] = {
+        'model': lr, 'y_pred': y_pred_lr, 'y_prob': y_prob_lr,
+        'accuracy':  accuracy_score(_y_test, y_pred_lr),
+        'precision': precision_score(_y_test, y_pred_lr, zero_division=0),
+        'recall':    recall_score(_y_test, y_pred_lr, zero_division=0),
+        'f1':        f1_score(_y_test, y_pred_lr, zero_division=0),
+        'cm':        confusion_matrix(_y_test, y_pred_lr),
+        'color': '#667eea', 'short': 'LR',
+    }
+
+    rf = RandomForestClassifier(n_estimators=200, max_depth=8, random_state=42, n_jobs=-1)
+    rf.fit(_X_train, _y_train)
+    y_pred_rf = rf.predict(_X_test)
+    y_prob_rf = rf.predict_proba(_X_test)[:, 1]
+    results['Random Forest'] = {
+        'model': rf, 'y_pred': y_pred_rf, 'y_prob': y_prob_rf,
+        'accuracy':  accuracy_score(_y_test, y_pred_rf),
+        'precision': precision_score(_y_test, y_pred_rf, zero_division=0),
+        'recall':    recall_score(_y_test, y_pred_rf, zero_division=0),
+        'f1':        f1_score(_y_test, y_pred_rf, zero_division=0),
+        'cm':        confusion_matrix(_y_test, y_pred_rf),
+        'color': '#22c55e', 'short': 'RF',
+    }
+
+    # FIX: hapus use_label_encoder (deprecated di XGBoost versi baru)
+    xgb = XGBClassifier(
+        n_estimators=200, max_depth=5, learning_rate=0.08,
+        subsample=0.8, colsample_bytree=0.8,
+        eval_metric='logloss', random_state=42, n_jobs=-1, verbosity=0
+    )
+    xgb.fit(_X_train, _y_train)
+    y_pred_xgb = xgb.predict(_X_test)
+    y_prob_xgb = xgb.predict_proba(_X_test)[:, 1]
+    results['XGBoost'] = {
+        'model': xgb, 'y_pred': y_pred_xgb, 'y_prob': y_prob_xgb,
+        'accuracy':  accuracy_score(_y_test, y_pred_xgb),
+        'precision': precision_score(_y_test, y_pred_xgb, zero_division=0),
+        'recall':    recall_score(_y_test, y_pred_xgb, zero_division=0),
+        'f1':        f1_score(_y_test, y_pred_xgb, zero_division=0),
+        'cm':        confusion_matrix(_y_test, y_pred_xgb),
+        'color': '#f56565', 'short': 'XGB',
+    }
+
+    return results
+
+
+# ─────────────────────────────────────────────
+# 6. HELPER: PLOTLY THEME
+# ─────────────────────────────────────────────
+PLOTLY_LAYOUT = dict(
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    font=dict(family='Inter', color='#aab4be', size=12),
+    legend=dict(bgcolor='rgba(255,255,255,0.04)', bordercolor='rgba(255,255,255,0.1)', borderwidth=1),
+    margin=dict(l=20, r=20, t=40, b=20),
+    colorway=['#667eea', '#22c55e', '#f56565', '#fbbf24', '#38bdf8', '#a78bfa'],
+)
+
+
+# ─────────────────────────────────────────────
+# 7. LOAD DATA & TRAIN
+# ─────────────────────────────────────────────
+DATA_PATH = "shopping_trends-selected-columns.csv"
+
+with st.spinner("⚙️ Memuat data dan melatih model..."):
+    (df, df_encoded,
+     X_train, X_test, X_train_sc, X_test_sc,
+     y_train, y_test,
+     encoders, scaler, feature_cols) = load_and_preprocess(DATA_PATH)
+
+    model_results = train_models(
+        X_train_sc, X_test_sc, X_train, X_test, y_train, y_test
+    )
+
+best_model_name = max(model_results, key=lambda m: model_results[m]['f1'])
+best_model_info = model_results[best_model_name]
+
+
+# ─────────────────────────────────────────────
+# 8. SIDEBAR
+# ─────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("""
+    <div style='text-align:center; padding: 16px 0 8px 0;'>
+        <div style='font-size:2.4rem;'>🛒</div>
+        <div style='font-size:1.1rem; font-weight:700; color:#e0e0e0; margin-top:4px;'>ML Predictor</div>
+        <div style='font-size:0.72rem; color:#667eea; letter-spacing:1px;'>SUBSCRIPTION ANALYSIS</div>
+    </div>
+    <hr style='border-color:rgba(255,255,255,0.08); margin: 12px 0;'>
+    """, unsafe_allow_html=True)
+
+    page = st.radio(
+        "📌 Navigasi",
+        ["🏠 Overview", "📊 EDA — Eksplorasi Data", "🤖 Perbandingan Model", "🔮 Prediksi Interaktif"],
+        label_visibility="collapsed"
+    )
+
+    st.markdown("""<hr style='border-color:rgba(255,255,255,0.08); margin: 12px 0;'>""", unsafe_allow_html=True)
+    st.markdown("""
+    <div style='font-size:0.78rem; color:#6c757d; padding:8px 0;'>
+        <b style='color:#aab4be;'>📂 Dataset</b><br>
+        shopping_trends-selected-columns.csv<br><br>
+        <b style='color:#aab4be;'>📌 Model</b><br>
+        <span class='model-badge badge-lr'>LR</span>
+        <span class='model-badge badge-rf'>RF</span>
+        <span class='model-badge badge-xgb'>XGB</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""<hr style='border-color:rgba(255,255,255,0.08); margin: 12px 0;'>""", unsafe_allow_html=True)
+
+    sub_pct = df['Pelanggan Potensial'].mean() * 100
+    st.markdown(f"""
+    <div style='background:rgba(102,126,234,0.1); border:1px solid rgba(102,126,234,0.3);
+                border-radius:12px; padding:14px; font-size:0.8rem; color:#aab4be;'>
+        <div style='margin-bottom:6px;'>📦 Total Records: <b style='color:#e0e0e0;'>{len(df):,}</b></div>
+        <div style='margin-bottom:6px;'>✅ Pelanggan Potensial: <b style='color:#22c55e;'>{df['Pelanggan Potensial'].sum():,}</b> ({sub_pct:.1f}%)</div>
+        <div>❌ Not Sub: <b style='color:#f56565;'>{(df['Pelanggan Potensial']==0).sum():,}</b> ({100-sub_pct:.1f}%)</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+# 9. HALAMAN: OVERVIEW
+# ─────────────────────────────────────────────
+if page == "🏠 Overview":
+
+    st.markdown(f"""
+    <div class='hero-banner'>
+        <div class='hero-title'>📊 Dashboard Prediksi Status Berlangganan</div>
+        <div class='hero-sub'>
+            Membandingkan performa <b>Logistic Regression</b>, <b>Random Forest</b>, dan <b>XGBoost</b>
+            dalam memprediksi status langganan pelanggan menggunakan Shopping Trends Dataset (3.900 records).
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<div class='section-title'>📌 Ringkasan Dataset & Model</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-sub'>Gambaran umum data dan performa model terbaik.</div>", unsafe_allow_html=True)
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    kpis = [
+        (c1, "Total Records",    f"{len(df):,}",                              "3.900 baris data transaksi"),
+        (c2, "Fitur Digunakan",  "9",                                          "Age, Category, Season, dll"),
+        (c3, "Pelanggan Potensial", f"{df['Pelanggan Potensial'].sum():,}",    f"{sub_pct:.1f}% dari total"),
+        (c4, "Train / Test Split",  "80% / 20%",                              f"{len(X_train)} / {len(X_test)} samples"),
+        (c5, "Model Terbaik",    best_model_name.split()[0],                   f"F1: {best_model_info['f1']:.3f}"),
+    ]
+    for col, label, val, sub in kpis:
+        with col:
+            st.markdown(f"""
+            <div class='kpi-card'>
+                <div class='kpi-label'>{label}</div>
+                <div class='kpi-value'>{val}</div>
+                <div class='kpi-sub'>{sub}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown("<div class='section-title'>🏆 Akurasi Ketiga Model</div>", unsafe_allow_html=True)
+    c1, c2, c3 = st.columns(3)
+    model_display = [
+        (c1, "Logistic Regression", "#667eea", "badge-lr"),
+        (c2, "Random Forest",       "#22c55e", "badge-rf"),
+        (c3, "XGBoost",             "#f56565", "badge-xgb"),
+    ]
+    for col, name, color, badge in model_display:
+        with col:
+            info = model_results[name]
+            is_best = (name == best_model_name)
+            best_tag = "<span class='model-badge badge-best'>⭐ BEST</span>" if is_best else ""
+            st.markdown(f"""
+            <div class='kpi-card' style='border-color:{color}40;'>
+                <div class='kpi-label'>{best_tag} <span class='model-badge {badge}'>{info["short"]}</span></div>
+                <div style='font-size:1rem; font-weight:600; color:#e0e0e0; margin:6px 0;'>{name}</div>
+                <div class='kpi-value' style='font-size:2.4rem;'>{info["accuracy"]:.1%}</div>
+                <div style='margin-top:10px; display:flex; justify-content:space-around; font-size:0.78rem; color:#8892a4;'>
+                    <div>P: <b style='color:#e0e0e0;'>{info["precision"]:.3f}</b></div>
+                    <div>R: <b style='color:#e0e0e0;'>{info["recall"]:.3f}</b></div>
+                    <div>F1: <b style='color:{color};'>{info["f1"]:.3f}</b></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown("<div class='section-title'>🔄 Alur Kerja ML Pipeline</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-sub'>Dari raw data hingga hasil prediksi — visualisasi tahapan proses.</div>", unsafe_allow_html=True)
+
+    steps = [
+        ("📂", "Load Data",         "3.900 records\n10 kolom CSV"),
+        ("🔧", "Preprocessing",      "Encode kategori\nStandardisasi"),
+        ("🎯", "Target Engineering", "Buat kolom\n'Pelanggan Potensial'"),
+        ("✂️",  "Train/Test Split",  "80% train\n20% test"),
+        ("🤖", "Train 3 Models",     "LR · RF · XGB"),
+        ("📊", "Evaluate",           "Accuracy / F1\nROC-AUC"),
+        ("🔮", "Predict",            "Real-time\nprediksi baru"),
+    ]
+
+    cols = st.columns(len(steps))
+    for i, (col, (icon, title, desc)) in enumerate(zip(cols, steps)):
+        with col:
+            st.markdown(f"""
+            <div style='text-align:center; background:rgba(102,126,234,0.07);
+                        border:1px solid rgba(102,126,234,0.2); border-radius:14px;
+                        padding:18px 10px;'>
+                <div style='font-size:1.8rem;'>{icon}</div>
+                <div style='font-size:0.8rem; font-weight:700; color:#e0e0e0; margin:6px 0;'>{title}</div>
+                <div style='font-size:0.68rem; color:#6c757d; white-space:pre-line;'>{desc}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+
+# ─────────────────────────────────────────────
+# 10. HALAMAN: EDA
+# ─────────────────────────────────────────────
+elif page == "📊 EDA — Eksplorasi Data":
+
+    st.markdown("<div class='hero-banner'><div class='hero-title'>📊 Exploratory Data Analysis</div><div class='hero-sub'>Visualisasi interaktif untuk memahami distribusi dan pola dalam dataset transaksi belanja.</div></div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='section-title'>🎛️ Panel Kontrol & Filter Data</div>", unsafe_allow_html=True)
+
+    with st.expander("🔍 Klik untuk Memfilter Kategori Produk, Musim, atau Gender", expanded=True):
+        col_f1, col_f2, col_f3 = st.columns(3)
+        with col_f1:
+            available_categories = sorted(df['Category'].dropna().unique().tolist())
+            selected_categories = st.multiselect("📦 Pilih Kategori Produk:", options=available_categories, default=available_categories)
+        with col_f2:
+            available_seasons = sorted(df['Season'].dropna().unique().tolist())
+            selected_seasons = st.multiselect("🌤️ Pilih Musim:", options=available_seasons, default=available_seasons)
+        with col_f3:
+            available_genders = sorted(df['Gender'].dropna().unique().tolist())
+            selected_genders = st.multiselect("⚧ Pilih Gender Pelanggan:", options=available_genders, default=available_genders)
+
+    if not selected_categories: selected_categories = available_categories
+    if not selected_seasons:    selected_seasons    = available_seasons
+    if not selected_genders:    selected_genders    = available_genders
+
+    eda_df = df[
+        (df['Category'].isin(selected_categories)) &
+        (df['Season'].isin(selected_seasons)) &
+        (df['Gender'].isin(selected_genders))
+    ].copy()
+
+    st.caption(f"💡 Menampilkan **{eda_df.shape[0]:,}** dari **{df.shape[0]:,}** baris data berdasarkan filter aktif.")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("<div class='section-title'>🎯 Distribusi Target</div>", unsafe_allow_html=True)
+        target_counts = eda_df['Pelanggan Potensial'].value_counts().reset_index()
+        target_counts.columns = ['Status', 'Count']
+        target_counts['Label'] = target_counts['Status'].map({1: 'Pelanggan Potensial', 0: 'Pelanggan Kurang Potensial'})
+        fig = px.pie(target_counts, values='Count', names='Label',
+                     color_discrete_sequence=['#22c55e', '#f56565'], hole=0.55)
+        fig.update_layout(**PLOTLY_LAYOUT, height=300)
+        fig.update_traces(textfont_color='white', textfont_size=12)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with c2:
+        st.markdown("<div class='section-title'>👤 Distribusi Gender</div>", unsafe_allow_html=True)
+        gen_sub = eda_df.groupby(['Gender', 'Pelanggan Potensial']).size().reset_index(name='Count')
+        gen_sub['Status'] = gen_sub['Pelanggan Potensial'].map({1: 'Pelanggan Potensial', 0: 'Pelanggan Kurang Potensial'})
+        fig = px.bar(gen_sub, x='Gender', y='Count', color='Status', barmode='group',
+                     color_discrete_map={'Pelanggan Potensial': '#22c55e', 'Pelanggan Kurang Potensial': '#f56565'})
+        fig.update_layout(**PLOTLY_LAYOUT, height=300,
+                          xaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
+                          yaxis=dict(gridcolor='rgba(255,255,255,0.05)'))
+        st.plotly_chart(fig, use_container_width=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("<div class='section-title'>📅 Distribusi Umur Pelanggan</div>", unsafe_allow_html=True)
+        eda_df['Status_Label'] = eda_df['Pelanggan Potensial'].map({1: 'Pelanggan Potensial', 0: 'Pelanggan Kurang Potensial'})
+        fig = px.histogram(eda_df, x='Age', color='Status_Label', nbins=20, barmode='overlay', opacity=0.75,
+                           color_discrete_map={'Pelanggan Potensial': '#667eea', 'Pelanggan Kurang Potensial': '#f56565'},
+                           labels={'Status_Label': 'Status', 'Age': 'Umur'})
+        fig.update_layout(**PLOTLY_LAYOUT, height=300,
+                          xaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
+                          yaxis=dict(gridcolor='rgba(255,255,255,0.05)'))
+        st.plotly_chart(fig, use_container_width=True)
+
+    with c2:
+        st.markdown("<div class='section-title'>💵 Distribusi Jumlah Pembelian</div>", unsafe_allow_html=True)
+        fig = px.box(eda_df,
+                     x=eda_df['Pelanggan Potensial'].map({1: 'Pelanggan Potensial', 0: 'Pelanggan Kurang Potensial'}),
+                     y='Purchase Amount (USD)',
+                     color=eda_df['Pelanggan Potensial'].map({1: 'Pelanggan Potensial', 0: 'Pelanggan Kurang Potensial'}),
+                     color_discrete_map={'Pelanggan Potensial': '#22c55e', 'Pelanggan Kurang Potensial': '#f56565'},
+                     labels={'x': 'Status', 'y': 'Purchase Amount (USD)'})
+        fig.update_layout(**PLOTLY_LAYOUT, height=300,
+                          xaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
+                          yaxis=dict(gridcolor='rgba(255,255,255,0.05)'))
+        st.plotly_chart(fig, use_container_width=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("<div class='section-title'>🌡️ Heatmap Kategori × Musim (Avg Purchase)</div>", unsafe_allow_html=True)
+        if not eda_df.empty:
+            pivot = eda_df.groupby(['Category', 'Season'])['Purchase Amount (USD)'].mean().reset_index()
+            pivot_wide = pivot.pivot(index='Category', columns='Season', values='Purchase Amount (USD)')
+            fig = px.imshow(pivot_wide, text_auto='.1f', color_continuous_scale='Viridis',
+                            labels=dict(color="Avg Purchase ($)"))
+            fig.update_layout(**PLOTLY_LAYOUT, height=300)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("Data kosong untuk kombinasi filter ini.")
+
+    with c2:
+        st.markdown("<div class='section-title'>📦 Rata-rata Pembelian per Kategori</div>", unsafe_allow_html=True)
+        cat_avg = eda_df.groupby('Category')['Purchase Amount (USD)'].mean().reset_index()
+        cat_avg = cat_avg.sort_values('Purchase Amount (USD)', ascending=True)
+        fig = px.bar(cat_avg, x='Purchase Amount (USD)', y='Category', orientation='h',
+                     color='Purchase Amount (USD)', color_continuous_scale='Viridis')
+        fig.update_layout(**PLOTLY_LAYOUT, height=300,
+                          xaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
+                          yaxis=dict(gridcolor='rgba(255,255,255,0.05)'))
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("<div class='section-title'>📈 Rasio Pelanggan Potensial per Musim & Kategori</div>", unsafe_allow_html=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        season_sub = eda_df.groupby('Season')['Pelanggan Potensial'].mean().reset_index()
+        season_sub.columns = ['Season', 'Sub Rate']
+        season_sub['Sub Rate %'] = season_sub['Sub Rate'] * 100
+        season_sorted = season_sub.sort_values('Sub Rate %', ascending=False)
+        fig = px.bar(season_sorted, x='Season', y='Sub Rate %',
+                     color='Sub Rate %', color_continuous_scale='Plasma',
+                     text=season_sorted['Sub Rate %'].map(lambda x: f"{x:.1f}%"))
+        fig.update_traces(textposition='outside', textfont_color='white')
+        fig.update_layout(**PLOTLY_LAYOUT, height=280,
+                          xaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
+                          yaxis=dict(gridcolor='rgba(255,255,255,0.05)', title='Rasio Potensial (%)'))
+        st.plotly_chart(fig, use_container_width=True)
+
+    with c2:
+        cat_sub = eda_df.groupby('Category')['Pelanggan Potensial'].mean().reset_index()
+        cat_sub.columns = ['Category', 'Sub Rate']
+        cat_sub['Sub Rate %'] = cat_sub['Sub Rate'] * 100
+        cat_sorted = cat_sub.sort_values('Sub Rate %', ascending=False)
+        fig = px.bar(cat_sorted, x='Category', y='Sub Rate %',
+                     color='Sub Rate %', color_continuous_scale='Teal',
+                     text=cat_sorted['Sub Rate %'].map(lambda x: f"{x:.1f}%"))
+        fig.update_traces(textposition='outside', textfont_color='white')
+        fig.update_layout(**PLOTLY_LAYOUT, height=280,
+                          xaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
+                          yaxis=dict(gridcolor='rgba(255,255,255,0.05)', title='Rasio Potensial (%)'))
+        st.plotly_chart(fig, use_container_width=True)
+
+    with st.expander("📄 Lihat Raw Data Terfilter (10 baris pertama)", expanded=False):
+        preview_cols = [c for c in eda_df.columns if c not in ['Pelanggan Potensial', 'Status_Label']] + ['Pelanggan Potensial']
+        st.dataframe(
+            eda_df[preview_cols].head(10).style
+                .background_gradient(subset=['Purchase Amount (USD)'], cmap='Blues')
+                .applymap(lambda v: 'color: #22c55e; font-weight:600' if v == 1 else
+                                    'color: #f56565; font-weight:600' if v == 0 else '',
+                          subset=['Pelanggan Potensial']),
+            use_container_width=True
+        )
+
+
+# ─────────────────────────────────────────────
+# 11. HALAMAN: PERBANDINGAN MODEL
+# ─────────────────────────────────────────────
+elif page == "🤖 Perbandingan Model":
+
+    st.markdown("<div class='hero-banner'><div class='hero-title'>🤖 Perbandingan Performa Model ML</div><div class='hero-sub'>Evaluasi mendalam Logistic Regression, Random Forest, dan XGBoost — metrik, confusion matrix, ROC, dan feature importance.</div></div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='section-title'>📋 Tabel Metrik Performa</div>", unsafe_allow_html=True)
+    metrics_df = pd.DataFrame([
+        {
+            'Model': name,
+            'Accuracy':  f"{info['accuracy']:.4f}",
+            'Precision': f"{info['precision']:.4f}",
+            'Recall':    f"{info['recall']:.4f}",
+            'F1-Score':  f"{info['f1']:.4f}",
+            'Status': '⭐ Best' if name == best_model_name else ''
+        }
+        for name, info in model_results.items()
+    ])
+    st.dataframe(
+        metrics_df.style
+            .applymap(lambda v: 'color: #fbbf24; font-weight:700' if v == '⭐ Best' else '', subset=['Status'])
+            .set_properties(**{'text-align': 'center'}),
+        use_container_width=True, hide_index=True
+    )
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>📊 Visualisasi Perbandingan Metrik</div>", unsafe_allow_html=True)
+
+    metric_names  = ['accuracy', 'precision', 'recall', 'f1']
+    metric_labels = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
+
+    fig = go.Figure()
+    for name, info in model_results.items():
+        fig.add_trace(go.Bar(
+            name=name, x=metric_labels,
+            y=[info[m] for m in metric_names],
+            marker_color=info['color'],
+            text=[f"{info[m]:.3f}" for m in metric_names],
+            textposition='outside', textfont=dict(color='white', size=11),
+        ))
+    fig.update_layout(**PLOTLY_LAYOUT, barmode='group', height=380,
+                      xaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
+                      yaxis=dict(gridcolor='rgba(255,255,255,0.05)', range=[0, 1.12], title='Score'))
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("<div class='section-title'>📈 ROC Curve — Semua Model</div>", unsafe_allow_html=True)
+    fig_roc = go.Figure()
+    for name, info in model_results.items():
+        fpr, tpr, _ = roc_curve(y_test, info['y_prob'])
+        roc_auc = auc(fpr, tpr)
+        fig_roc.add_trace(go.Scatter(x=fpr, y=tpr, name=f"{info['short']} (AUC = {roc_auc:.3f})",
+                                     line=dict(color=info['color'], width=2.5), mode='lines'))
+    fig_roc.add_trace(go.Scatter(x=[0, 1], y=[0, 1], name='Random (AUC = 0.500)',
+                                  line=dict(color='rgba(255,255,255,0.2)', width=1.5, dash='dash'), mode='lines'))
+    fig_roc.update_layout(**PLOTLY_LAYOUT, height=380,
+                          xaxis=dict(title='False Positive Rate', gridcolor='rgba(255,255,255,0.05)'),
+                          yaxis=dict(title='True Positive Rate',  gridcolor='rgba(255,255,255,0.05)'))
+    st.plotly_chart(fig_roc, use_container_width=True)
+
+    st.markdown("<div class='section-title'>🔍 Feature Importance</div>", unsafe_allow_html=True)
+    feat_labels = ['Age', 'Purchase($)', 'Gender', 'Item', 'Category', 'Location', 'Size', 'Color', 'Season']
+    c1, c2 = st.columns(2)
+    for col, model_display_name, key in [(c1, 'Random Forest', 'Random Forest'), (c2, 'XGBoost', 'XGBoost')]:
+        with col:
+            imp = model_results[key]['model'].feature_importances_
+            fi_df = pd.DataFrame({'Feature': feat_labels, 'Importance': imp}).sort_values('Importance', ascending=True)
+            fig_fi = px.bar(fi_df, x='Importance', y='Feature', orientation='h',
+                            color='Importance', color_continuous_scale='Viridis',
+                            title=f"Feature Importance — {model_display_name}")
+            fig_fi.update_layout(**PLOTLY_LAYOUT, height=300, title_font_color='#e0e0e0',
+                                 xaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
+                                 yaxis=dict(gridcolor='rgba(255,255,255,0.05)'))
+            st.plotly_chart(fig_fi, use_container_width=True)
+
+    st.markdown("<div class='section-title'>🕸️ Radar Chart — Profil Model</div>", unsafe_allow_html=True)
+    categories = ['Accuracy', 'Precision', 'Recall', 'F1-Score']
+    fig_radar = go.Figure()
+    for name, info in model_results.items():
+        vals = [info['accuracy'], info['precision'], info['recall'], info['f1']]
+        vals_closed = vals + [vals[0]]
+        c = info['color']
+        r, g, b = int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
+        fig_radar.add_trace(go.Scatterpolar(
+            r=vals_closed, theta=categories + [categories[0]],
+            name=name, line=dict(color=info['color'], width=2),
+            fill='toself', fillcolor=f'rgba({r},{g},{b},0.12)', opacity=0.8,
+        ))
+    fig_radar.update_layout(**PLOTLY_LAYOUT, height=420,
+                            polar=dict(
+                                bgcolor='rgba(0,0,0,0)',
+                                radialaxis=dict(visible=True, range=[0, 1], gridcolor='rgba(255,255,255,0.1)', color='#6c757d'),
+                                angularaxis=dict(gridcolor='rgba(255,255,255,0.1)', color='#aab4be'),
+                            ))
+    st.plotly_chart(fig_radar, use_container_width=True)
+
+    st.markdown("<div class='section-title'>🔲 Confusion Matrix</div>", unsafe_allow_html=True)
+    cm_cols   = st.columns(3)
+    cm_labels = ['Pelanggan Kurang Potensial', 'Pelanggan Potensial']
+    for i, (name, info) in enumerate(model_results.items()):
+        with cm_cols[i]:
+            st.markdown(f"<div style='text-align:center; font-weight:600; color:#e0e0e0; margin-bottom:8px;'>{name}</div>", unsafe_allow_html=True)
+            fig_cm = px.imshow(info['cm'], text_auto=True, x=cm_labels, y=cm_labels,
+                               color_continuous_scale=[[0, '#1a1a2e'], [1, info['color']]],
+                               labels=dict(x='Prediksi', y='Aktual'))
+            fig_cm.update_layout(**PLOTLY_LAYOUT, height=300, coloraxis_showscale=False,
+                                 margin=dict(l=50, r=10, t=10, b=50))
+            fig_cm.update_traces(textfont_size=16, textfont_color='white')
+            st.plotly_chart(fig_cm, use_container_width=True)
+
+
+# ─────────────────────────────────────────────
+# 12. HALAMAN: PREDIKSI INTERAKTIF
+# ─────────────────────────────────────────────
+elif page == "🔮 Prediksi Interaktif":
+
+    st.markdown(f"""
+    <div class='hero-banner'>
+        <div class='hero-title'>🔮 Prediksi Interaktif</div>
+        <div class='hero-sub'>
+            Masukkan atribut pelanggan baru dan dapatkan prediksi real-time menggunakan
+            <b>{best_model_name}</b> <span class='model-badge badge-best'>⭐ Best Model</span>
+            (F1 = {best_model_info['f1']:.3f})
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<div class='section-title'>📝 Input Data Pelanggan</div>", unsafe_allow_html=True)
+
+    with st.form("prediction_form"):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            age      = st.number_input("👤 Umur Pelanggan", min_value=1, max_value=99, value=32, step=1)
+            gender   = st.selectbox("⚧ Gender", encoders['Gender'].classes_.tolist())
+            category = st.selectbox("📦 Kategori Produk", encoders['Category'].classes_.tolist())
+        with c2:
+            purchase = st.number_input("💵 Jumlah Pembelian ($)", min_value=0, max_value=1000, value=65, step=5)
+            season   = st.selectbox("🌤️ Musim", encoders['Season'].classes_.tolist())
+            size     = st.selectbox("📐 Ukuran", encoders['Size'].classes_.tolist())
+        with c3:
+            item     = st.selectbox("🛍️ Item Dibeli", encoders['Item Purchased'].classes_.tolist())
+            location = st.selectbox("📍 Lokasi", encoders['Location'].classes_.tolist()[:10])
+            color    = st.selectbox("🎨 Warna", encoders['Color'].classes_.tolist()[:10])
+
+        submitted = st.form_submit_button("🚀 Jalankan Prediksi", use_container_width=True)
+
+    if submitted:
+        input_raw = {
+            'Age': age,
+            'Purchase Amount (USD)': purchase,
+            'Gender_enc':          encoders['Gender'].transform([gender])[0],
+            'Item Purchased_enc':  encoders['Item Purchased'].transform([item])[0],
+            'Category_enc':        encoders['Category'].transform([category])[0],
+            'Location_enc':        encoders['Location'].transform([location])[0],
+            'Size_enc':            encoders['Size'].transform([size])[0],
+            'Color_enc':           encoders['Color'].transform([color])[0],
+            'Season_enc':          encoders['Season'].transform([season])[0],
+        }
+        input_df     = pd.DataFrame([input_raw])[feature_cols]
+        input_scaled = scaler.transform(input_df)
+
+        st.markdown("<br><div class='section-title'>🎯 Hasil Prediksi</div>", unsafe_allow_html=True)
+
+        best = best_model_info
+        if best_model_name == 'Logistic Regression':
+            pred = best['model'].predict(input_scaled)[0]
+            prob = best['model'].predict_proba(input_scaled)[0]
+        else:
+            pred = best['model'].predict(input_df)[0]
+            prob = best['model'].predict_proba(input_df)[0]
+
+        conf_subscribe = prob[1]
+        conf_not       = prob[0]
+
+        c_main, c_detail = st.columns([1, 1])
+        with c_main:
+            if pred == 1:
+                st.markdown(f"""
+                <div class='pred-subscribe'>
+                    <div class='pred-emoji'>✅</div>
+                    <div class='pred-label'>BERLANGGANAN</div>
+                    <div class='pred-conf'>Keyakinan model: <b style='color:#22c55e;'>{conf_subscribe:.1%}</b></div>
+                    <div class='pred-conf' style='margin-top:6px;'>Model: <b>{best_model_name}</b></div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown(f"""
+                <div class='pred-not-subscribe'>
+                    <div class='pred-emoji'>❌</div>
+                    <div class='pred-label'>TIDAK BERLANGGANAN</div>
+                    <div class='pred-conf'>Keyakinan model: <b style='color:#f56565;'>{conf_not:.1%}</b></div>
+                    <div class='pred-conf' style='margin-top:6px;'>Model: <b>{best_model_name}</b></div>
+                </div>
+                """, unsafe_allow_html=True)
+
+        with c_detail:
+            fig_gauge = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=conf_subscribe * 100,
+                title={'text': "Probabilitas Berlangganan (%)", 'font': {'color': '#aab4be', 'size': 13}},
+                number={'font': {'color': '#22c55e' if pred == 1 else '#f56565', 'size': 32}},
+                gauge={
+                    'axis': {'range': [0, 100], 'tickcolor': '#6c757d'},
+                    'bar':  {'color': '#22c55e' if pred == 1 else '#f56565'},
+                    'bgcolor': 'rgba(255,255,255,0.03)',
+                    'borderwidth': 1, 'bordercolor': 'rgba(255,255,255,0.1)',
+                    'steps': [
+                        {'range': [0, 40],   'color': 'rgba(245,101,101,0.1)'},
+                        {'range': [40, 60],  'color': 'rgba(251,191,36,0.1)'},
+                        {'range': [60, 100], 'color': 'rgba(34,197,94,0.1)'},
+                    ],
+                    'threshold': {'line': {'color': '#fbbf24', 'width': 2}, 'thickness': 0.8, 'value': 50}
+                },
+            ))
+            fig_gauge.update_layout(**PLOTLY_LAYOUT, height=240)
+            st.plotly_chart(fig_gauge, use_container_width=True)
+
+        st.markdown("<br><div class='section-title'>📊 Perbandingan Prediksi Semua Model</div>", unsafe_allow_html=True)
+        all_preds = []
+        for name, info in model_results.items():
+            if name == 'Logistic Regression':
+                p  = info['model'].predict(input_scaled)[0]
+                pb = info['model'].predict_proba(input_scaled)[0]
+            else:
+                p  = info['model'].predict(input_df)[0]
+                pb = info['model'].predict_proba(input_df)[0]
+            all_preds.append({
+                'Model': name,
+                'Prediksi': '✅ Pelanggan Potensial' if p == 1 else '❌ Pelanggan Kurang Potensial',
+                'Conf. Subscribe': pb[1], 'Conf. Not Sub': pb[0]
+            })
+
+        pred_df = pd.DataFrame(all_preds)
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.dataframe(
+                pred_df.style
+                    .format({'Conf. Subscribe': '{:.3f}', 'Conf. Not Sub': '{:.3f}'})
+                    .applymap(lambda v: 'color:#22c55e; font-weight:700' if '✅' in str(v) else
+                                        'color:#f56565; font-weight:700' if '❌' in str(v) else '',
+                              subset=['Prediksi']),
+                hide_index=True, use_container_width=True
+            )
+        with col_b:
+            fig_compare = go.Figure()
+            for row in all_preds:
+                name  = row['Model']
+                clr   = model_results[name]['color']
+                fig_compare.add_trace(go.Bar(
+                    name=name,
+                    x=['Pelanggan Potensial', 'Pelanggan Kurang Potensial'],
+                    y=[row['Conf. Subscribe'], row['Conf. Not Sub']],
+                    marker_color=clr,
+                    text=[f"{row['Conf. Subscribe']:.3f}", f"{row['Conf. Not Sub']:.3f}"],
+                    textposition='outside', textfont=dict(color='white', size=11),
+                ))
+            fig_compare.update_layout(**PLOTLY_LAYOUT, barmode='group', height=280,
+                                      xaxis=dict(gridcolor='rgba(255,255,255,0.05)'),
+                                      yaxis=dict(gridcolor='rgba(255,255,255,0.05)', range=[0, 1.15], title='Probabilitas'))
+            st.plotly_chart(fig_compare, use_container_width=True)
+
+        st.markdown("<div class='section-title'>👤 Ringkasan Profil Pelanggan</div>", unsafe_allow_html=True)
+        profile_cols  = st.columns(4)
+        profile_items = [
+            ("👤 Umur",     f"{age} tahun"),
+            ("⚧ Gender",    gender),
+            ("📦 Kategori", category),
+            ("💵 Pembelian", f"${purchase}"),
+            ("🌤️ Musim",    season),
+            ("🛍️ Item",     item),
+            ("📐 Ukuran",   size),
+            ("🎨 Warna",    color),
+        ]
+        for i, (label, val) in enumerate(profile_items):
+            with profile_cols[i % 4]:
+                st.markdown(f"""
+                <div style='background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);
+                            border-radius:10px; padding:12px 16px; margin-bottom:8px;'>
+                    <div style='font-size:0.72rem; color:#6c757d;'>{label}</div>
+                    <div style='font-size:0.95rem; font-weight:600; color:#e0e0e0;'>{val}</div>
+                </div>
+                """, unsafe_allow_html=True)
