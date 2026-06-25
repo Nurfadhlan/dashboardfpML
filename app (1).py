@@ -2,11 +2,10 @@
 # DASHBOARD: Perbandingan Model ML untuk Prediksi Status Berlangganan Pelanggan
 # Metode: Logistic Regression | Random Forest | XGBoost
 # =============================================================================
-
 # ─────────────────────────────────────────────
-# 1. IMPORT LIBRARY
+# 1. IMPORT LIBRARY & PERSIAPAN DATA
 # ─────────────────────────────────────────────
-import streamlit as st
+import streamlit as st  # PERBAIKAN: Pastikan di-import sebagai 'st', bukan 'pd'
 import pandas as pd
 import numpy as np
 import plotly.express as px
@@ -24,6 +23,25 @@ from sklearn.metrics import (
 from xgboost import XGBClassifier
 import warnings
 warnings.filterwarnings("ignore")
+
+# ─────────────────────────────────────────────
+# FIX: MEMBACA DATASET UTAMA (Penyebab NameError 'df')
+# ─────────────────────────────────────────────
+# Silakan sesuaikan nama file CSV Anda di bawah ini (misal: 'data_pelanggan.csv')
+@st.cache_data
+def load_data():
+    # Gantilah 'shopping_trends.csv' atau nama file data asli Anda di sini
+    data = pd.read_csv("shopping_trends.csv") 
+    
+    # Pastikan nama kolom target diubah atau disesuaikan dengan nama baru jika belum
+    if 'Subscription Status' in data.columns:
+        # Mengubah isi kolom menjadi 1 dan 0 jika awalnya teks 'Yes' / 'No'
+        data['Pelanggan Potensial'] = data['Subscription Status'].map({'Yes': 1, 'No': 0})
+    
+    return data
+
+# Memanggil fungsi agar variabel 'df' terdefinisi secara global dan bisa dibaca oleh EDA
+df = load_data()
 
 # ─────────────────────────────────────────────
 # 2. KONFIGURASI HALAMAN
